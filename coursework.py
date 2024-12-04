@@ -8,10 +8,10 @@ from torch.utils.data import DataLoader
 import multiprocessing
 import numpy as np
 from deap import creator, base, tools, algorithms
-from scipy.optimize import differential_evolution
 import matplotlib.pyplot as plt
 
 def main():
+    print("Starting main function...")
     # Set up multiprocessing
     multiprocessing.freeze_support()
 
@@ -24,6 +24,7 @@ def main():
     ])
 
     # Load CIFAR-10 dataset
+    print("Loading CIFAR-10 dataset...")
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
 
@@ -88,7 +89,8 @@ def main():
             return x
 
     # Training Function
-    def train_network(model, trainloader, epochs=50):
+    def train_network(model, trainloader, epochs=5):  # Reduced epochs to 5 for testing
+        print("Starting network training...")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
         
@@ -96,9 +98,10 @@ def main():
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         
         for epoch in range(epochs):
+            print(f"Epoch {epoch+1}/{epochs}")
             model.train()
             running_loss = 0.0
-            for inputs, labels in trainloader:
+            for i, (inputs, labels) in enumerate(trainloader, 0):
                 inputs, labels = inputs.to(device), labels.to(device)
                 
                 optimizer.zero_grad()
@@ -108,6 +111,9 @@ def main():
                 optimizer.step()
                 
                 running_loss += loss.item()
+                if i % 100 == 99:  # Print every 100 mini-batches
+                    print(f"[{epoch+1}, {i+1}] loss: {running_loss / 100:.4f}")
+                    running_loss = 0.0
             
             # Validation
             model.eval()
@@ -121,13 +127,14 @@ def main():
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
             
-            print(f'Epoch {epoch+1}, Loss: {running_loss/len(trainloader):.4f}, Accuracy: {100 * correct / total:.2f}%')
+            print(f'Epoch {epoch+1}, Accuracy: {100 * correct / total:.2f}%')
     
     # Initial full network training
     model = CIFAR10ResNet()
     train_network(model, trainloader)
 
     def evaluate_fc_layer(individual, model, testloader):
+        print("Evaluating fully connected layer...")
         # Convert individual to layer weights
         weights = torch.tensor(individual).float().reshape(model.fc.weight.shape)
         
@@ -153,9 +160,12 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
         
-        return (correct / total,)  # DEAP works with tuples
+        accuracy = correct / total
+        print(f"Evaluation complete. Accuracy: {accuracy:.4f}")
+        return (accuracy,)  # DEAP works with tuples
 
     # Setup for genetic algorithm
+    print("Setting up genetic algorithm...")
     creator.create("FitnessMax", base.Fitness, weights=(1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMax)
 
@@ -169,13 +179,17 @@ def main():
     toolbox.register("select", tools.selTournament, tournsize=3)
 
     def run_genetic_algorithm():
+        print("Running genetic algorithm...")
         population = toolbox.population(n=50)
         algorithms.eaSimple(population, toolbox, cxpb=0.5, mutpb=0.2, ngen=40, verbose=False)
         best_individual = tools.selBest(population, k=1)[0]
-        return evaluate_fc_layer(best_individual, model, testloader)[0]
+        accuracy = evaluate_fc_layer(best_individual, model, testloader)[0]
+        print(f"Genetic algorithm complete. Best accuracy: {accuracy:.4f}")
+        return accuracy
 
     class ParticleSwarmOptimizer:
         def __init__(self, model, testloader):
+            print("Initializing Particle Swarm Optimizer...")
             self.model = model
             self.testloader = testloader
             self.n_particles = 30
@@ -194,13 +208,18 @@ def main():
                 self.best_score = float('-inf')
 
         def evaluate_fitness(self, weights):
+            print("Evaluating fitness of a particle...")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model = self.model.to(device)
             return evaluate_fc_layer(weights, self.model, self.testloader)[0]
 
         def optimize(self, iterations=40):
+            print("Starting PSO optimization...")
             global_best_position = None
             global_best_score = float('-inf')
 
-            for _ in range(iterations):
+            for iteration in range(iterations):
+                print(f"Iteration {iteration+1}/{iterations}")
                 for particle in self.swarm:
                     fitness = self.evaluate_fitness(particle.position)
                     if fitness > particle.best_score:
@@ -217,20 +236,55 @@ def main():
                     particle.velocity = inertia + cognitive + social
                     particle.position += particle.velocity
 
+            print(f"PSO optimization complete. Best score: {global_best_score:.4f}")
             return global_best_score
 
-    def objective_function(weights):
-        return -evaluate_fc_layer(weights, model, testloader)[0]
+    # Commented out differential evolution
+    # def objective_function(weights):
+    #     print("Evaluating objective function...")
+    #     return -evaluate_fc_layer(weights, model, testloader)[0]
 
-    result = differential_evolution(objective_function, bounds=[(-1, 1) for _ in range(model.fc.weight.numel())])
-    differential_evolution_accuracy = -result.fun
+    # def differential_evolution_callback(xk, convergence):
+    #     print(f"Generation {differential_evolution_callback.generation}: Best score so far: {-objective_function(xk):.4f}")
+    #     differential_evolution_callback.generation += 1
 
-    def compare_optimization_methods():
-        methods = ['Standard Adam', 'Genetic Algorithm', 'PSO', 'Differential Evolution']
+    # differential_evolution_callback.generation = 1
+
+    # print("Running differential evolution...")
+    # result = differential_evolution(
+    #     objective_function,
+    #     bounds=[(-1, 1) for _ in range(model.fc.weight.numel())],
+    #     maxiter=3,  # Maximum number of generations
+    #     popsize=3,  # Population size
+    #     tol=0.01,   # Convergence tolerance
+    #     disp=True,  # Display progress
+    #     callback=differential_evolution_callback
+    # )
+    # differential_evolution_accuracy = -result.fun
+    # print(f"Differential evolution complete. Best accuracy: {differential_evolution_accuracy:.4f}")
+
+    def compare_optimization_methods(model, testloader):
+        print("Comparing optimization methods...")
+        methods = ['Standard Adam', 'Genetic Algorithm', 'PSO']
         accuracies = []
 
         # Standard Adam accuracy
-        accuracies.append(100 * correct / total)
+        print("Evaluating Standard Adam accuracy...")
+        model.eval()
+        correct = 0
+        total = 0
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        with torch.no_grad():
+            for inputs, labels in testloader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+        adam_accuracy = 100 * correct / total
+        accuracies.append(adam_accuracy)
+        print(f"Standard Adam accuracy: {adam_accuracy:.2f}%")
 
         # Genetic Algorithm accuracy
         genetic_algorithm_accuracy = run_genetic_algorithm()
@@ -241,15 +295,15 @@ def main():
         pso_accuracy = pso.optimize()
         accuracies.append(100 * pso_accuracy)
 
-        # Differential Evolution accuracy
-        accuracies.append(100 * differential_evolution_accuracy)
+        # Commented out differential evolution accuracy
+        # accuracies.append(100 * differential_evolution_accuracy)
 
         plt.bar(methods, accuracies)
         plt.title('Last Layer Optimization Comparison')
         plt.ylabel('Accuracy')
         plt.show()
 
-    compare_optimization_methods()
+    compare_optimization_methods(model, testloader)
 
 if __name__ == '__main__':
     main()
