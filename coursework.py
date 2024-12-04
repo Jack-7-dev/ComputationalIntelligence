@@ -133,177 +133,177 @@ def main():
     model = CIFAR10ResNet()
     train_network(model, trainloader)
 
-    def evaluate_fc_layer(individual, model, testloader):
-        print("Evaluating fully connected layer...")
-        # Convert individual to layer weights
-        weights = torch.tensor(individual).float().reshape(model.fc.weight.shape)
+    # def evaluate_fc_layer(individual, model, testloader):
+    #     print("Evaluating fully connected layer...")
+    #     # Convert individual to layer weights
+    #     weights = torch.tensor(individual).float().reshape(model.fc.weight.shape)
         
-        # Freeze all layers except the last
-        for param in model.parameters():
-            param.requires_grad = False
+    #     # Freeze all layers except the last
+    #     for param in model.parameters():
+    #         param.requires_grad = False
         
-        # Only last layer is trainable
-        model.fc.weight.data = weights
-        model.fc.bias.data.zero_()
+    #     # Only last layer is trainable
+    #     model.fc.weight.data = weights
+    #     model.fc.bias.data.zero_()
         
-        # Evaluate performance
-        model.eval()
-        correct = 0
-        total = 0
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        with torch.no_grad():
-            for inputs, labels in testloader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+    #     # Evaluate performance
+    #     model.eval()
+    #     correct = 0
+    #     total = 0
+    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #     model = model.to(device)
+    #     with torch.no_grad():
+    #         for inputs, labels in testloader:
+    #             inputs, labels = inputs.to(device), labels.to(device)
+    #             outputs = model(inputs)
+    #             _, predicted = torch.max(outputs.data, 1)
+    #             total += labels.size(0)
+    #             correct += (predicted == labels).sum().item()
         
-        accuracy = correct / total
-        print(f"Evaluation complete. Accuracy: {accuracy:.4f}")
-        return (accuracy,)  # DEAP works with tuples
+    #     accuracy = correct / total
+    #     print(f"Evaluation complete. Accuracy: {accuracy:.4f}")
+    #     return (accuracy,)  # DEAP works with tuples
 
-    # Setup for genetic algorithm
-    print("Setting up genetic algorithm...")
-    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-    creator.create("Individual", list, fitness=creator.FitnessMax)
+    # # Setup for genetic algorithm
+    # print("Setting up genetic algorithm...")
+    # creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    # creator.create("Individual", list, fitness=creator.FitnessMax)
 
-    toolbox = base.Toolbox()
-    toolbox.register("attr_float", np.random.uniform, -1, 1)
-    toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_float, n=model.fc.weight.numel())
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-    toolbox.register("evaluate", evaluate_fc_layer, model=model, testloader=testloader)
-    toolbox.register("mate", tools.cxTwoPoint)
-    toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=0.1, indpb=0.2)
-    toolbox.register("select", tools.selTournament, tournsize=3)
+    # toolbox = base.Toolbox()
+    # toolbox.register("attr_float", np.random.uniform, -1, 1)
+    # toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_float, n=model.fc.weight.numel())
+    # toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+    # toolbox.register("evaluate", evaluate_fc_layer, model=model, testloader=testloader)
+    # toolbox.register("mate", tools.cxTwoPoint)
+    # toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=0.1, indpb=0.2)
+    # toolbox.register("select", tools.selTournament, tournsize=3)
 
-    def run_genetic_algorithm():
-        print("Running genetic algorithm...")
-        population = toolbox.population(n=50)
-        algorithms.eaSimple(population, toolbox, cxpb=0.5, mutpb=0.2, ngen=40, verbose=False)
-        best_individual = tools.selBest(population, k=1)[0]
-        accuracy = evaluate_fc_layer(best_individual, model, testloader)[0]
-        print(f"Genetic algorithm complete. Best accuracy: {accuracy:.4f}")
-        return accuracy
+    # def run_genetic_algorithm():
+    #     print("Running genetic algorithm...")
+    #     population = toolbox.population(n=50)
+    #     algorithms.eaSimple(population, toolbox, cxpb=0.5, mutpb=0.2, ngen=40, verbose=False)
+    #     best_individual = tools.selBest(population, k=1)[0]
+    #     accuracy = evaluate_fc_layer(best_individual, model, testloader)[0]
+    #     print(f"Genetic algorithm complete. Best accuracy: {accuracy:.4f}")
+    #     return accuracy
 
-    class ParticleSwarmOptimizer:
-        def __init__(self, model, testloader):
-            print("Initializing Particle Swarm Optimizer...")
-            self.model = model
-            self.testloader = testloader
-            self.n_particles = 30
-            self.w = 0.7  # inertia
-            self.c1 = 1.4  # cognitive parameter
-            self.c2 = 1.4  # social parameter
-            self.dim = model.fc.weight.numel()
-            self.bounds = (-1, 1)
-            self.swarm = [self.Particle(self.dim, self.bounds) for _ in range(self.n_particles)]
+    # class ParticleSwarmOptimizer:
+    #     def __init__(self, model, testloader):
+    #         print("Initializing Particle Swarm Optimizer...")
+    #         self.model = model
+    #         self.testloader = testloader
+    #         self.n_particles = 30
+    #         self.w = 0.7  # inertia
+    #         self.c1 = 1.4  # cognitive parameter
+    #         self.c2 = 1.4  # social parameter
+    #         self.dim = model.fc.weight.numel()
+    #         self.bounds = (-1, 1)
+    #         self.swarm = [self.Particle(self.dim, self.bounds) for _ in range(self.n_particles)]
 
-        class Particle:
-            def __init__(self, dim, bounds):
-                self.position = np.random.uniform(bounds[0], bounds[1], dim)
-                self.velocity = np.random.uniform(-1, 1, dim)
-                self.best_position = self.position.copy()
-                self.best_score = float('-inf')
+    #     class Particle:
+    #         def __init__(self, dim, bounds):
+    #             self.position = np.random.uniform(bounds[0], bounds[1], dim)
+    #             self.velocity = np.random.uniform(-1, 1, dim)
+    #             self.best_position = self.position.copy()
+    #             self.best_score = float('-inf')
 
-        def evaluate_fitness(self, weights):
-            print("Evaluating fitness of a particle...")
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.model = self.model.to(device)
-            return evaluate_fc_layer(weights, self.model, self.testloader)[0]
+    #     def evaluate_fitness(self, weights):
+    #         print("Evaluating fitness of a particle...")
+    #         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #         self.model = self.model.to(device)
+    #         return evaluate_fc_layer(weights, self.model, self.testloader)[0]
 
-        def optimize(self, iterations=40):
-            print("Starting PSO optimization...")
-            global_best_position = None
-            global_best_score = float('-inf')
+    #     def optimize(self, iterations=40):
+    #         print("Starting PSO optimization...")
+    #         global_best_position = None
+    #         global_best_score = float('-inf')
 
-            for iteration in range(iterations):
-                print(f"Iteration {iteration+1}/{iterations}")
-                for particle in self.swarm:
-                    fitness = self.evaluate_fitness(particle.position)
-                    if fitness > particle.best_score:
-                        particle.best_score = fitness
-                        particle.best_position = particle.position.copy()
-                    if fitness > global_best_score:
-                        global_best_score = fitness
-                        global_best_position = particle.position.copy()
+    #         for iteration in range(iterations):
+    #             print(f"Iteration {iteration+1}/{iterations}")
+    #             for particle in self.swarm:
+    #                 fitness = self.evaluate_fitness(particle.position)
+    #                 if fitness > particle.best_score:
+    #                     particle.best_score = fitness
+    #                     particle.best_position = particle.position.copy()
+    #                 if fitness > global_best_score:
+    #                     global_best_score = fitness
+    #                     global_best_position = particle.position.copy()
 
-                for particle in self.swarm:
-                    inertia = self.w * particle.velocity
-                    cognitive = self.c1 * np.random.rand(self.dim) * (particle.best_position - particle.position)
-                    social = self.c2 * np.random.rand(self.dim) * (global_best_position - particle.position)
-                    particle.velocity = inertia + cognitive + social
-                    particle.position += particle.velocity
+    #             for particle in self.swarm:
+    #                 inertia = self.w * particle.velocity
+    #                 cognitive = self.c1 * np.random.rand(self.dim) * (particle.best_position - particle.position)
+    #                 social = self.c2 * np.random.rand(self.dim) * (global_best_position - particle.position)
+    #                 particle.velocity = inertia + cognitive + social
+    #                 particle.position += particle.velocity
 
-            print(f"PSO optimization complete. Best score: {global_best_score:.4f}")
-            return global_best_score
+    #         print(f"PSO optimization complete. Best score: {global_best_score:.4f}")
+    #         return global_best_score
 
-    # Commented out differential evolution
-    # def objective_function(weights):
-    #     print("Evaluating objective function...")
-    #     return -evaluate_fc_layer(weights, model, testloader)[0]
+    # # Commented out differential evolution
+    # # def objective_function(weights):
+    # #     print("Evaluating objective function...")
+    # #     return -evaluate_fc_layer(weights, model, testloader)[0]
 
-    # def differential_evolution_callback(xk, convergence):
-    #     print(f"Generation {differential_evolution_callback.generation}: Best score so far: {-objective_function(xk):.4f}")
-    #     differential_evolution_callback.generation += 1
+    # # def differential_evolution_callback(xk, convergence):
+    # #     print(f"Generation {differential_evolution_callback.generation}: Best score so far: {-objective_function(xk):.4f}")
+    # #     differential_evolution_callback.generation += 1
 
-    # differential_evolution_callback.generation = 1
+    # # differential_evolution_callback.generation = 1
 
-    # print("Running differential evolution...")
-    # result = differential_evolution(
-    #     objective_function,
-    #     bounds=[(-1, 1) for _ in range(model.fc.weight.numel())],
-    #     maxiter=3,  # Maximum number of generations
-    #     popsize=3,  # Population size
-    #     tol=0.01,   # Convergence tolerance
-    #     disp=True,  # Display progress
-    #     callback=differential_evolution_callback
-    # )
-    # differential_evolution_accuracy = -result.fun
-    # print(f"Differential evolution complete. Best accuracy: {differential_evolution_accuracy:.4f}")
+    # # print("Running differential evolution...")
+    # # result = differential_evolution(
+    # #     objective_function,
+    # #     bounds=[(-1, 1) for _ in range(model.fc.weight.numel())],
+    # #     maxiter=3,  # Maximum number of generations
+    # #     popsize=3,  # Population size
+    # #     tol=0.01,   # Convergence tolerance
+    # #     disp=True,  # Display progress
+    # #     callback=differential_evolution_callback
+    # # )
+    # # differential_evolution_accuracy = -result.fun
+    # # print(f"Differential evolution complete. Best accuracy: {differential_evolution_accuracy:.4f}")
 
-    def compare_optimization_methods(model, testloader):
-        print("Comparing optimization methods...")
-        methods = ['Standard Adam', 'Genetic Algorithm', 'PSO']
-        accuracies = []
+    # def compare_optimization_methods(model, testloader):
+    #     print("Comparing optimization methods...")
+    #     methods = ['Standard Adam', 'Genetic Algorithm', 'PSO']
+    #     accuracies = []
 
-        # Standard Adam accuracy
-        print("Evaluating Standard Adam accuracy...")
-        model.eval()
-        correct = 0
-        total = 0
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        with torch.no_grad():
-            for inputs, labels in testloader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-        adam_accuracy = 100 * correct / total
-        accuracies.append(adam_accuracy)
-        print(f"Standard Adam accuracy: {adam_accuracy:.2f}%")
+    #     # Standard Adam accuracy
+    #     print("Evaluating Standard Adam accuracy...")
+    #     model.eval()
+    #     correct = 0
+    #     total = 0
+    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #     model = model.to(device)
+    #     with torch.no_grad():
+    #         for inputs, labels in testloader:
+    #             inputs, labels = inputs.to(device), labels.to(device)
+    #             outputs = model(inputs)
+    #             _, predicted = torch.max(outputs.data, 1)
+    #             total += labels.size(0)
+    #             correct += (predicted == labels).sum().item()
+    #     adam_accuracy = 100 * correct / total
+    #     accuracies.append(adam_accuracy)
+    #     print(f"Standard Adam accuracy: {adam_accuracy:.2f}%")
 
-        # Genetic Algorithm accuracy
-        genetic_algorithm_accuracy = run_genetic_algorithm()
-        accuracies.append(100 * genetic_algorithm_accuracy)
+    #     # Genetic Algorithm accuracy
+    #     genetic_algorithm_accuracy = run_genetic_algorithm()
+    #     accuracies.append(100 * genetic_algorithm_accuracy)
 
-        # PSO accuracy
-        pso = ParticleSwarmOptimizer(model, testloader)
-        pso_accuracy = pso.optimize()
-        accuracies.append(100 * pso_accuracy)
+    #     # PSO accuracy
+    #     pso = ParticleSwarmOptimizer(model, testloader)
+    #     pso_accuracy = pso.optimize()
+    #     accuracies.append(100 * pso_accuracy)
 
-        # Commented out differential evolution accuracy
-        # accuracies.append(100 * differential_evolution_accuracy)
+    #     # Commented out differential evolution accuracy
+    #     # accuracies.append(100 * differential_evolution_accuracy)
 
-        plt.bar(methods, accuracies)
-        plt.title('Last Layer Optimization Comparison')
-        plt.ylabel('Accuracy')
-        plt.show()
+    #     plt.bar(methods, accuracies)
+    #     plt.title('Last Layer Optimization Comparison')
+    #     plt.ylabel('Accuracy')
+    #     plt.show()
 
-    compare_optimization_methods(model, testloader)
+    # compare_optimization_methods(model, testloader)
 
 if __name__ == '__main__':
     main()

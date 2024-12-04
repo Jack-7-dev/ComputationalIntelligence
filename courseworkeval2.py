@@ -95,32 +95,66 @@ def main():
     accuracies_ga = []
     evaluations_pso = []
     accuracies_pso = []
+    total_evaluations = 100
 
     ### Gradient Descent Method
-    def train_gradient_descent(model, trainloader, testloader, epochs=20):
-        print("Training with Gradient Descent...")
+    def train_gradient_descent(model, trainloader, testloader): 
+        print("Starting network training...")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
+        
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(model.parameters(), lr=0.01)
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        
         num_evaluations = 0
+        evaluations_gd = []
+        accuracies_gd = []
 
+        epochs = 20
+        #batches_per_epoch = len(trainloader)
+        #max_epochs = total_evaluations // batches_per_epoch
+        print(f"Total epochs: {epochs}")
+        
         for epoch in range(epochs):
+            print(f"Epoch {epoch+1}/{epochs}")
             model.train()
-            for inputs, labels in trainloader:
+            running_loss = 0.0
+            for i, (inputs, labels) in enumerate(trainloader, 0):
                 inputs, labels = inputs.to(device), labels.to(device)
+                
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-                num_evaluations += 1  # Increment evaluations
 
-            # Evaluate accuracy
-            accuracy = evaluate_model(model, testloader)
+                num_evaluations += inputs.size(0)
+                
+                running_loss += loss.item()
+                if i % 100 == 99:  # Print every 100 mini-batches
+                    print(f"[{epoch+1}, {i+1}] loss: {running_loss / 100:.4f}")
+                    running_loss = 0.0
+            
+            # Validation
+            model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for inputs, labels in testloader:
+                    inputs, labels = inputs.to(device), labels.to(device)
+                    outputs = model(inputs)
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+            
+            accuracy = 100 * correct / total
+            print(f'Epoch {epoch+1}, Accuracy: {accuracy:.2f}%')
+            
+            # Record evaluations and accuracy
             evaluations_gd.append(num_evaluations)
             accuracies_gd.append(accuracy)
-            print(f"Epoch {epoch+1}, Accuracy: {accuracy:.2f}%, Evaluations: {num_evaluations}")
+        
+        return evaluations_gd, accuracies_gd
 
     ### Genetic Algorithm
     def run_genetic_algorithm(model, testloader, generations=10, population_size=10):
@@ -128,6 +162,8 @@ def main():
         model = model.to(device)
         print("Running Genetic Algorithm...")
         num_evaluations = 0
+        generations = total_evaluations // population_size
+        print(f"Total generations: {generations}")
 
         # Define fitness function
         def evaluate_fc_layer(individual):
@@ -167,11 +203,11 @@ def main():
 
     ### Particle Swarm Optimization
     class ParticleSwarmOptimizer:
-        def __init__(self, model, testloader, num_particles=10, iterations=5):
+        def __init__(self, model, testloader, num_particles=10, iterations=10):
             self.model = model
             self.testloader = testloader
             self.num_particles = num_particles
-            self.iterations = iterations
+            self.iterations = total_evaluations // num_particles
             self.num_evaluations = 0
             self.dim = model.fc.weight.numel()
             self.bounds = (-1, 1)
@@ -263,7 +299,7 @@ def main():
     ### Run the methods
     # Clone the original model for each method to ensure fair comparison
     model_gd = CIFAR10ResNet()
-    train_gradient_descent(model_gd, trainloader, testloader)
+    evaluations_gd, accuracies_gd = train_gradient_descent(model_gd, trainloader, testloader)
 
     model_ga = CIFAR10ResNet()
     run_genetic_algorithm(model_ga, testloader)
