@@ -95,7 +95,9 @@ def main():
     accuracies_ga = []
     evaluations_pso = []
     accuracies_pso = []
-    total_evaluations = 100
+    evaluations_de = []
+    accuracies_de = []
+    total_evaluations = 10
 
     ### Gradient Descent Method
     def train_gradient_descent(model, trainloader, testloader): 
@@ -110,7 +112,7 @@ def main():
         evaluations_gd = []
         accuracies_gd = []
 
-        epochs = 20
+        epochs = 0
         #batches_per_epoch = len(trainloader)
         #max_epochs = total_evaluations // batches_per_epoch
         print(f"Total epochs: {epochs}")
@@ -257,6 +259,95 @@ def main():
                 accuracies_pso.append(accuracy)
                 print(f"Iteration {iter+1}, Best Accuracy: {accuracy:.2f}%, Evaluations: {self.num_evaluations}")
 
+    ### Differential Evolution
+    def run_differential_evolution(model, testloader, generations=10, population_size=10):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        print("Running Differential Evolution...")
+        num_evaluations = 0
+        evaluations_de = []
+        accuracies_de = []
+        print(f"Total generations: {generations}")
+
+        # Define fitness function
+        def evaluate_fc_layer(individual):
+            nonlocal num_evaluations
+            num_evaluations += 1
+            accuracy = evaluate_fc_layer_accuracy(individual, model, testloader)[0]
+            return (accuracy,)
+
+        # Setup DE using DEAP
+        # Check if creator classes already exist to avoid errors
+        if not hasattr(creator, 'FitnessMaxDE'):
+            creator.create("FitnessMaxDE", base.Fitness, weights=(1.0,))
+        if not hasattr(creator, 'IndividualDE'):
+            creator.create("IndividualDE", list, fitness=creator.FitnessMaxDE)
+
+        toolbox = base.Toolbox()
+        toolbox.register("attr_float", np.random.uniform, -1, 1)
+        num_weights = model.fc.weight.numel()
+        toolbox.register("individual", tools.initRepeat, creator.IndividualDE, toolbox.attr_float, n=num_weights)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        toolbox.register("evaluate", evaluate_fc_layer)
+        toolbox.register("select", tools.selBest)
+
+        # Initialize population
+        population = toolbox.population(n=population_size)
+
+        # Evaluate initial population
+        fitnesses = list(map(toolbox.evaluate, population))
+        for ind, fit in zip(population, fitnesses):
+            ind.fitness.values = fit
+
+        # DE parameters
+        F = 0.8   # Mutation factor
+        CR = 0.9  # Crossover probability
+
+        for gen in range(generations):
+            print(f"Generation {gen+1}/{generations}")
+            offspring = []
+
+            for idx, target in enumerate(population):
+                # Mutation: select three random individuals a, b, c
+                indices = [i for i in range(len(population)) if i != idx]
+                a_idx, b_idx, c_idx = np.random.choice(indices, 3, replace=False)
+                a = population[a_idx]
+                b = population[b_idx]
+                c = population[c_idx]
+                
+                mutant_vector = [a_i + F * (b_i - c_i) for a_i, b_i, c_i in zip(a, b, c)]
+                mutant_vector = np.clip(mutant_vector, -1, 1)  # Ensure within bounds
+
+                # Crossover
+                crossover = []
+                for target_gene, mutant_gene in zip(target, mutant_vector):
+                    if np.random.rand() < CR:
+                        crossover.append(mutant_gene)
+                    else:
+                        crossover.append(target_gene)
+                trial = creator.IndividualDE(crossover)
+
+                # Evaluate trial individual
+                trial.fitness.values = toolbox.evaluate(trial)
+
+                # Selection
+                if trial.fitness > target.fitness:
+                    offspring.append(trial)
+                else:
+                    offspring.append(target)
+
+            # Replace population with offspring
+            population = offspring
+
+            # Record best individual
+            best_individual = tools.selBest(population, k=1)[0]
+            best_accuracy = best_individual.fitness.values[0] * 100
+            evaluations_de.append(num_evaluations)
+            accuracies_de.append(best_accuracy)
+            print(f"Generation {gen+1}, Best Accuracy: {best_accuracy:.2f}%, Evaluations: {num_evaluations}")
+
+        return evaluations_de, accuracies_de
+    
     ### Helper Functions
     def evaluate_model(model, testloader):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -308,10 +399,15 @@ def main():
     pso_optimizer = ParticleSwarmOptimizer(model_pso, testloader)
     pso_optimizer.optimize()
 
+    ### Run DE method
+    model_de = CIFAR10ResNet()
+    evaluations_de, accuracies_de = run_differential_evolution(model_de, testloader, generations=10, population_size=10)
+
     ### Plotting the results
     plt.plot(evaluations_gd, accuracies_gd, label='Gradient Descent')
     plt.plot(evaluations_ga, accuracies_ga, label='Genetic Algorithm')
     plt.plot(evaluations_pso, accuracies_pso, label='PSO')
+    plt.plot(evaluations_de, accuracies_de, label='Differential Evolution')
     plt.xlabel('Number of Objective Function Evaluations')
     plt.ylabel('Accuracy (%)')
     plt.title('Accuracy vs. Number of Function Evaluations')
